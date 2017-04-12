@@ -421,6 +421,7 @@ class RsErrorAnnotatorTest : RsAnnotatorTestBase() {
             f: &'a Fn (&u32) -> &u32,
         }
         struct Bar<'a> {
+            o: &'a str,
             a: <error descr="Missing lifetime specifier [E0106]">&</error>str,
             b: (bool, (u8, <error>&</error>f64)),
             c: Result<Box<<error>&</error>u32>, u8>,
@@ -434,6 +435,7 @@ class RsErrorAnnotatorTest : RsAnnotatorTestBase() {
             (bool, (u8, &'a f64)),
             &'a Fn (&u32) -> &u32);
         struct Bar<'a> (
+            &'a str,
             <error descr="Missing lifetime specifier [E0106]">&</error>str,
             (bool, (u8, <error>&</error>f64)),
             <error>&</error>Fn (&u32) -> &u32);
@@ -446,6 +448,7 @@ class RsErrorAnnotatorTest : RsAnnotatorTestBase() {
             F(&'a Fn (&u32) -> &u32),
         }
         enum Bar<'a> {
+            O(&'a str),
             A(<error descr="Missing lifetime specifier [E0106]">&</error>str),
             B(bool, (u8, <error>&</error>f64)),
             F(<error>&</error>Fn (&u32) -> &u32),
@@ -472,7 +475,7 @@ class RsErrorAnnotatorTest : RsAnnotatorTestBase() {
         struct Foo2<'a, 'b> { a: &'a u32, b: &'b str }
 
         type Err1 = <error descr="Missing lifetime specifier [E0106]">Foo1</error>;
-        struct Err2<'a> { a: <error>Foo2<></error> }
+        struct Err2<'a> { a: <error>Foo2<></error>, o: &'a u32 }
         enum Err3<'d> { A(&'d Box<<error>Foo1</error>> ) }
     """)
 
@@ -690,6 +693,22 @@ class RsErrorAnnotatorTest : RsAnnotatorTestBase() {
             fn foo();
             <error descr="Trait functions cannot be declared const [E0379]">const</error> fn bar();
         }
+    """)
+
+    fun `test E0392 unused lifetime parameter`() = checkErrors("""
+        struct SOk<'a> { a: &'a u32 }
+        enum EOk<'a> { E(&'a u32) }
+
+        struct SErr<'a, <error descr="Parameter `'b` is never used [E0392]">'b</error>> { a: &'a u32 }
+        enum EErr<'a, <error>'b</error>> { E(&'a u32) }
+    """)
+
+    fun `test E0392 unused type parameter`() = checkErrors("""
+        struct SOk<T> { t: T }
+        enum EOk<T> { E(T) }
+
+        struct SErr<T, <error descr="Parameter `U` is never used [E0392]">U</error>> { t: T }
+        enum EErr<T, <error>U</error>> { E(T) }
     """)
 
     fun testE0403_NameDuplicationInGenericParams() = checkErrors("""

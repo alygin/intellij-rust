@@ -10,6 +10,7 @@ import com.intellij.openapi.util.Key
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
+import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.util.PsiTreeUtil
 import org.rust.cargo.project.workspace.cargoWorkspace
 import org.rust.ide.annotator.fixes.*
@@ -18,7 +19,7 @@ import org.rust.lang.core.psi.*
 import org.rust.lang.core.psi.ext.*
 import org.rust.lang.core.resolve.Namespace
 import org.rust.lang.core.resolve.namespaces
- import org.rust.lang.core.types.type
+import org.rust.lang.core.types.type
 import org.rust.lang.core.types.types.RustReferenceType
 import org.rust.lang.core.types.types.RustUnknownType
 
@@ -37,6 +38,7 @@ class RsErrorAnnotator : Annotator, HighlightRangeExtension {
             override fun visitImplItem(o: RsImplItem) = checkImpl(holder, o)
             override fun visitLabel(o: RsLabel) = checkLabel(holder, o)
             override fun visitLifetime(o: RsLifetime) = checkLifetime(holder, o)
+            override fun visitLifetimeDecl(o: RsLifetimeDecl) = checkLifetimeDecl(holder, o)
             override fun visitModDeclItem(o: RsModDeclItem) = checkModDecl(holder, o)
             override fun visitModItem(o: RsModItem) = checkDuplicates(holder, o)
             override fun visitPatBinding(o: RsPatBinding) = checkPatBinding(holder, o)
@@ -46,7 +48,7 @@ class RsErrorAnnotator : Annotator, HighlightRangeExtension {
             override fun visitRetExpr(o: RsRetExpr) = checkRetExpr(holder, o)
             override fun visitTraitItem(o: RsTraitItem) = checkDuplicates(holder, o)
             override fun visitTypeAlias(o: RsTypeAlias) = checkTypeAlias(holder, o)
-            override fun visitTypeParameter(o: RsTypeParameter) = checkDuplicates(holder, o)
+            override fun visitTypeParameter(o: RsTypeParameter) = checkTypeParameter(holder, o)
             override fun visitLifetimeParameter(o: RsLifetimeParameter) = checkDuplicates(holder, o)
             override fun visitValueParameterList(o: RsValueParameterList) = checkValueParameterList(holder, o)
             override fun visitValueParameter(o: RsValueParameter) = checkValueParameter(holder, o)
@@ -305,6 +307,9 @@ class RsErrorAnnotator : Annotator, HighlightRangeExtension {
         requireResolve(holder, lifetime, "Use of undeclared lifetime name `${lifetime.text}` [E0261]")
     }
 
+    private fun checkLifetimeDecl(holder: AnnotationHolder, lifetimeDecl: RsLifetimeDecl) =
+        checkUnusedTypeParameter(holder, lifetimeDecl)
+
     private fun checkModDecl(holder: AnnotationHolder, modDecl: RsModDeclItem) {
         checkDuplicates(holder, modDecl)
         val pathAttribute = modDecl.pathAttribute
@@ -397,6 +402,11 @@ class RsErrorAnnotator : Annotator, HighlightRangeExtension {
         }
     }
 
+    private fun checkTypeParameter(holder: AnnotationHolder, parameter: RsTypeParameter) {
+        checkDuplicates(holder, parameter)
+        checkUnusedTypeParameter(holder, parameter)
+    }
+
     private fun checkTraitFnImplParams(holder: AnnotationHolder, fn: RsFunction, superFn: RsFunction, traitName: String) {
         val params = fn.valueParameterList ?: return
         val selfArg = fn.selfParameter
@@ -455,6 +465,13 @@ class RsErrorAnnotator : Annotator, HighlightRangeExtension {
         val retType = fn.retType?.typeReference ?: return
         if (retType is RsTupleType && retType.isUnitType) return
         holder.createErrorAnnotation(ret, "`return;` in a function whose return type is not `()` [E0069]")
+    }
+
+    private fun checkUnusedTypeParameter(holder: AnnotationHolder, parameter: RsNamedElement) {
+        val owner = parameter.parentOfType<RsTypeParameterList>()?.parent ?: return
+        if (owner !is RsStructItem && owner !is RsEnumItem) return
+        if (ReferencesSearch.search(parameter, parameter.useScope).findFirst() != null) return
+        holder.createErrorAnnotation(parameter, "Parameter `${parameter.name}` is never used [E0392]")
     }
 
     private fun requireResolve(holder: AnnotationHolder, el: RsReferenceElement, message: String) {
